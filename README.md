@@ -1,0 +1,2 @@
+# hamming_code_naive
+Hamming_Code_Naive_C
