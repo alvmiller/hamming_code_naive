@@ -376,7 +376,7 @@ int main()
     size_t dec_bits = 0;
     size_t syndrom = 0;
     manage_hamming_code.decode(&B, &C, sizeof(B), sizeof(C), enc_bits, &dec_bits, &syndrom, &manage_bits);
-    printf("syndrom = %u | 0x%x\n", syndrom, syndrom);
+    printf("syndrom = %zu\n", syndrom);
     assert(syndrom == 0);
     assert(dec_bits == sizeof(A) * CHAR_BIT);
     assert((uint16_t)A == C);
@@ -390,13 +390,22 @@ int main()
         manage_bits.toggle(&D, sizeof(D), i);
         printf("D = %u | 0x%x\n", D, D);
         manage_hamming_code.fix(&D, &C, sizeof(D), sizeof(C), enc_bits, &dec_bits, &syndrom, &manage_bits);
-        printf("syndrom = %u | 0x%x\n", syndrom, syndrom);
+        printf("syndrom = %zu\n", syndrom);
         assert(dec_bits == sizeof(A) * CHAR_BIT);
         assert((uint16_t)A == C);
         manage_bits.toggle(&D, sizeof(D), i);
     }
 
     printf("\n----------3----------\n\n");
+    
+    uint16_t D = B;
+    printf("D = %u | 0x%x\n", D, D);
+    manage_hamming_code.fix(&D, &C, sizeof(D), sizeof(C), enc_bits, &dec_bits, &syndrom, &manage_bits);
+    printf("syndrom = %zu\n", syndrom);
+    assert(dec_bits == sizeof(A) * CHAR_BIT);
+    assert((uint16_t)A == C);
+
+    printf("\n----------4----------\n\n");
 
     return 0;
 }
