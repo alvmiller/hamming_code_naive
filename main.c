@@ -62,7 +62,8 @@ void manage_bits_set_bit(
         printf("\tCan't set bit!\n");
         exit(1);
     }
-    
+
+    // ((uint8_t*)out)[n / CHAR_BIT] |= (1 << (n % CHAR_BIT));
     *(size_t *)value = *((size_t *)value) | ((size_t)1 << value_bit_position);
     return;
 }
@@ -79,6 +80,7 @@ void manage_bits_clear_bit(
         exit(1);
     }
 
+    // ((uint8_t*)out)[n / CHAR_BIT] &= ~(1 << (n % CHAR_BIT));
     *(size_t *)value = *((size_t *)value) & ~((size_t)1 << value_bit_position);
     return;
 }
@@ -95,7 +97,8 @@ void manage_bits_get_bit(
         printf("\tCan't get bit!\n");
         exit(1);
     }
-    
+
+    // return (((const uint8_t*)in)[n / CHAR_BIT] & (1 << (n % CHAR_BIT))) != 0;
     *value_bit = (*((size_t *)value) >> value_bit_position) & (size_t)1;
     return;
 }
@@ -111,7 +114,8 @@ void manage_bits_toggle_bit(
         printf("\tCan't toggle/flip bit!\n");
         exit(1);
     }
-    
+
+    // ((uint8_t*)out)[n / CHAR_BIT] ^= (1 << (n % CHAR_BIT));
     *(size_t *)value = *((size_t *)value) ^ ((size_t)1 << value_bit_position);
     return;
 }
@@ -170,11 +174,10 @@ void manage_hamming_code_encode(
     
     if (in == NULL || out == NULL || encoded_bits == NULL
      || manage_bits == NULL
-     || manage_bits->set == NULL
-     || manage_bits->get == NULL
+     || manage_bits->set == NULL || manage_bits->get == NULL
      || in_count_bytes == 0 || in_count_bytes > sizeof(size_t)
      || out_count_bytes == 0 || out_count_bytes > sizeof(size_t)
-     || out_count_bytes < (in_count_bytes * 2)) {
+     || out_count_bytes < (in_count_bytes + 1)) {
         printf("\tCan't encode!\n");
         exit(1);
     }
@@ -216,11 +219,10 @@ void manage_hamming_code_decode(
     
     if (in == NULL || out == NULL || decoded_bits == NULL || syndrom == NULL
      || manage_bits == NULL
-     || manage_bits->set == NULL
-     || manage_bits->get == NULL
+     || manage_bits->set == NULL || manage_bits->get == NULL
      || in_count_bytes == 0 || in_count_bytes > sizeof(size_t)
      || out_count_bytes == 0 || out_count_bytes > sizeof(size_t)
-     || out_count_bytes < (in_count_bytes / 2)
+     || out_count_bytes < (in_count_bytes - 1)
      || encoded_bits > in_bits || encoded_bits > out_bits) {
         printf("\tCan't decode!\n");
         exit(1);
@@ -240,6 +242,53 @@ void manage_hamming_code_decode(
 
     *syndrom = s;
     *decoded_bits = j;
+    return;
+}
+
+void manage_hamming_code_decode_and_fix(
+    const void * const in,
+    void *out,
+    const size_t in_count_bytes,
+    const size_t out_count_bytes,
+    const size_t encoded_bits,
+    size_t *decoded_bits,
+    size_t *syndrom,
+    const struct I_Bits_Manager * const manage_bits)
+{
+    size_t i = 0;
+    size_t j = 0;
+    size_t s = 0;
+    const size_t in_bits = in_count_bytes * CHAR_BIT;
+    const size_t out_bits = out_count_bytes * CHAR_BIT;
+    
+    if (in == NULL || out == NULL || decoded_bits == NULL || syndrom == NULL
+     || manage_bits == NULL
+     || manage_bits->set == NULL
+     || manage_bits->get == NULL
+     || in_count_bytes == 0 || in_count_bytes > sizeof(size_t)
+     || out_count_bytes == 0 || out_count_bytes > sizeof(size_t)
+     || out_count_bytes < (in_count_bytes / 2)
+     || encoded_bits > in_bits || encoded_bits > out_bits) {
+        printf("\tCan't decode!\n");
+        exit(1);
+    }
+
+    size_t out_tmp = *(size_t *)out;
+    size_t dec_bits_tmp = *decoded_bits;
+    size_t syndrom_tmp = *syndrom;
+    manage_hamming_code_decode(
+        in, &out_tmp, in_count_bytes, sizeof(out_tmp),
+        encoded_bits, &dec_bits_tmp, &syndrom_tmp, manage_bits);
+    if (syndrom_tmp != 0
+     && syndrom_tmp <= encoded_bits
+     && (syndrom_tmp & (syndrom_tmp - 1)) != 0) {
+        size_t k = 0;
+        for (k = 0; ((size_t)1 << k) < syndrom_tmp; ++k);
+        manage_bits->toggle(&out_tmp, sizeof(out_tmp), syndrom_tmp - k - 1);
+    }
+
+    *syndrom = syndrom_tmp;
+    *decoded_bits = dec_bits_tmp;
     return;
 }
 
@@ -277,15 +326,25 @@ struct I_Hamming_Code {
                    size_t *decoded_bits,
                    size_t *syndrom,
                    const struct I_Bits_Manager * const manage_bits);
-    void (*fix)();
+    void (*fix)(const void * const in,
+                void *out,
+                const size_t in_count_bytes,
+                const size_t out_count_bytes,
+                const size_t encoded_bits,
+                size_t *decoded_bits,
+                size_t *syndrom,
+                const struct I_Bits_Manager * const manage_bits);
 } static const manage_hamming_code = {
     .check  = &manage_hamming_code_check,
     .encode = &manage_hamming_code_encode,
     .decode = &manage_hamming_code_decode,
+    .fix    = &manage_hamming_code_decode_and_fix,
 };
 
 int main()
 {
+    printf("\n----------0----------\n\n");
+
     uint16_t val = 257;
     printf("Value = %u | 0x%x\n", val, val);
     manage_bits.print(&val, sizeof(val));
@@ -303,7 +362,7 @@ int main()
     manage_bits.clear(&val, sizeof(val), 9);
     printf("Value = %u | 0x%x\n", val, val);
 
-    printf("\n--------------------\n\n");
+    printf("\n----------1----------\n\n");
     
     uint8_t A = 2;
     uint16_t B = 0;
@@ -317,11 +376,27 @@ int main()
     size_t dec_bits = 0;
     size_t syndrom = 0;
     manage_hamming_code.decode(&B, &C, sizeof(B), sizeof(C), enc_bits, &dec_bits, &syndrom, &manage_bits);
+    printf("syndrom = %u | 0x%x\n", syndrom, syndrom);
     assert(syndrom == 0);
     assert(dec_bits == sizeof(A) * CHAR_BIT);
     assert((uint16_t)A == C);
     printf("C = %u | 0x%x\n", C, C);
     printf("Dec_Bits = %zu\n", dec_bits);
+
+    printf("\n----------2----------\n\n");
+
+    for (size_t i = 0; i < enc_bits; ++i) {
+        uint16_t D = B;
+        manage_bits.toggle(&D, sizeof(D), i);
+        printf("D = %u | 0x%x\n", D, D);
+        manage_hamming_code.fix(&D, &C, sizeof(D), sizeof(C), enc_bits, &dec_bits, &syndrom, &manage_bits);
+        printf("syndrom = %u | 0x%x\n", syndrom, syndrom);
+        assert(dec_bits == sizeof(A) * CHAR_BIT);
+        assert((uint16_t)A == C);
+        manage_bits.toggle(&D, sizeof(D), i);
+    }
+
+    printf("\n----------3----------\n\n");
 
     return 0;
 }
